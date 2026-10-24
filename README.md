@@ -1,136 +1,219 @@
-# thedecade_2026nakshatra
-Satellite-based flood mapping and impact assessment using Sentinel-1 SAR imagery to identify inundated areas and estimate potential impacts on roads, buildings, and settlements in Nepal's Terai region.
+# Guardian of the Terai
 
-# Guardian of the Terai 
-### Satellite-Based Flood Mapping & Impact Assessment
+> **Satellite-based flood mapping for Nepal's Terai region**  
+> Detects flooded areas by comparing pre-flood and post-flood Sentinel-1 SAR backscatter GeoTIFFs.
 
-**Guardian of the Terai (तराई प्रहरी)** is a geospatial flood-mapping project designed to identify potentially inundated areas using Sentinel-1 Synthetic Aperture Radar (SAR) imagery and assess nearby infrastructure exposure.
+---
 
-Our goal is to turn satellite observations into actionable insights that support flood assessment and disaster-response planning in Nepal's Terai region.
+## ⚠️ Data Disclaimer
 
- The Problem
+All flood statistics produced by this system are derived from **raster pixel arithmetic on actual input files**.  
+No flood extents, pixel counts, or statistics are fabricated, interpolated, or estimated from external sources.  
+The synthetic rasters used in tests are explicitly labelled and must never be presented as real observations.
 
-Floods can spread rapidly, making it difficult for response teams to determine the affected areas and identify nearby communities and infrastructure that may need attention. Cloud cover can also limit the use of conventional optical satellite imagery.
+---
 
- Our Solution
+## Architecture
 
-Guardian of the Terai compares pre-flood and post-flood radar imagery to detect changes that may indicate inundation. The results can be visualized on an interactive dashboard alongside available geographic information about roads, buildings, and settlements.
-
- How It Works
-
-1. **Satellite Data:** Provide pre-flood and post-flood GeoTIFF imagery.
-2. **Preprocessing:** Prepare the raster data for comparison.
-3. **Flood Detection:** Analyze radar backscatter changes to identify potentially flooded areas.
-4. **Impact Assessment:** Compare detected flood extent with available infrastructure and settlement data.
-5. **Visualization:** Explore flood maps and available statistics through the dashboard.
-6. **Export:** Access generated geospatial outputs supported by the application.
-
- System Architecture
-
-```text
-Satellite Images (GeoTIFF)
-          ↓
-     FastAPI Backend
-          ↓
-   Raster Preprocessing
-          ↓
-     Flood Detection
-          ↓
-   Flood Extent Outputs
-          ↓
-  Geospatial Impact Analysis
-          ↓
-   Streamlit Dashboard
-          ↓
- Maps, Statistics & Results
+```
+c:\decade\
+├── guardian/                    # Core Python package
+│   ├── config.py                # Constants and tuneable parameters
+│   ├── preprocessing/
+│   │   └── sentinel.py          # GeoTIFF validation, loading (dB / linear), alignment check
+│   ├── detection/
+│   │   └── flood.py             # Backscatter change detection + min-area filter
+│   ├── output/
+│   │   ├── geotiff.py           # Flood mask → uint8 GeoTIFF (0/1/255)
+│   │   └── geojson.py           # Flood mask → GeoJSON polygon (WGS 84)
+│   └── api/
+│       ├── main.py              # FastAPI app factory
+│       └── routes/
+│           ├── health.py        # GET /health
+│           └── analysis.py      # POST /analyze, GET /results/{job_id}/{file}
+├── dashboard/
+│   ├── app.py                   # Streamlit UI
+│   └── map_utils.py             # Folium helpers
+└── tests/                       # pytest suite (synthetic data only)
 ```
 
- Tech Stack
+---
 
-- **Language:** Python
-- **Backend:** FastAPI, Uvicorn
-- **Geospatial Processing:** Rasterio, NumPy, Shapely, Fiona
-- **Dashboard:** Streamlit, Folium
-- **Data Formats:** GeoTIFF, GeoJSON
-- **Testing:** pytest
+## Detection Algorithm
 
- Run Locally
+```
+σ°_post (dB) − σ°_pre (dB) = Δ
 
-### Prerequisites
-- Python 3.11
-- Conda/Miniforge recommended for geospatial dependencies
-- Git
+If Δ < threshold_db  AND  pixel is valid in both scenes:
+    → flooded
+```
 
-### 1. Clone the repository
+| Parameter | Default | Location |
+|---|---|---|
+| Threshold | **−3 dB** | `guardian/config.py → DEFAULT_THRESHOLD_DB` |
+| Min area filter | **9 pixels** | `guardian/config.py → MIN_AREA_PIXELS` |
 
+The −3 dB threshold is a widely-used heuristic from ESA/DLR change-detection literature.  
+**Tune it for your region using ground-truth data.**
+
+---
+
+## Input Requirements
+
+| Requirement | Details |
+|---|---|
+| Format | Single-band GeoTIFF |
+| Radiometric scale | **dB** (use `ScaleHint.LINEAR` if your data is in linear power) |
+| Co-registration | Both scenes must have identical CRS, pixel dimensions, and affine transform |
+| Nodata | Must be declared in the GeoTIFF header (GDAL nodata tag) |
+| Polarisation | VV or VH (single band) |
+
+> **Pre-processing tip:** Use [ESA SNAP](https://step.esa.int/main/toolboxes/snap/) to apply  
+> orbit correction → thermal noise removal → calibration → terrain correction → co-registration.
+
+---
+
+## Setup
+
+### 1. Install dependencies
+
+> On Windows, rasterio and GDAL are most reliably installed via conda:
+> ```bash
+> conda create -n guardian python=3.11
+> conda activate guardian
+> conda install -c conda-forge rasterio scipy fiona shapely
+> pip install -r requirements.txt
+> ```
+
+Or with pip only (may require pre-built GDAL wheels):
 ```bash
-git clone https://github.com/sristi991-sys/thedecade_2026nakshatra.git
-cd thedecade_2026nakshatra
+pip install -r requirements.txt
 ```
 
-### 2. Install dependencies
-
-If `requirements.txt` exists:
-
+### 2. Run the API backend
 ```bash
-python -m pip install -r requirements.txt
+uvicorn guardian.api.main:app --reload --host 0.0.0.0 --port 8000
 ```
+API docs: http://localhost:8000/docs
 
-Otherwise, if dependencies are configured in `pyproject.toml`:
-
+### 3. Run the Streamlit dashboard
 ```bash
-python -m pip install -e .
+streamlit run dashboard/app.py
 ```
 
-### 3. Start the backend
-
+### 4. Run tests
 ```bash
-python -m uvicorn guardian.api.main:app --host 127.0.0.1 --port 8000
+pytest -v
 ```
 
-Health check: `http://127.0.0.1:8000/health`
+---
 
-### 4. Start the dashboard
+## API Reference
 
-Open a second terminal:
-
-```bash
-python -m streamlit run dashboard/app.py --server.port 8501
+### `GET /health`
+```json
+{ "status": "ok", "version": "0.1.0", "service": "Guardian of the Terai" }
 ```
 
-Dashboard: `http://localhost:8501`
+### `POST /analyze`
 
- Project Structure
+**Accepts:** `multipart/form-data` with:
+- `pre_flood` — pre-flood Sentinel-1 GeoTIFF (dB scale)
+- `post_flood` — post-flood Sentinel-1 GeoTIFF (dB scale)
 
-```text
-├── dashboard/    # Streamlit interface
-├── guardian/     # Backend and geospatial processing
-├── data/         # Input and demo data
-├── scripts/      # Utility scripts
-├── tests/        # Automated tests
-├── pyproject.toml
-└── README.md
+**Returns:**
+```json
+{
+  "job_id": "550e8400-e29b-...",
+  "flooded_pixel_count": 1234,
+  "valid_pixel_count": 50000,
+  "flooded_fraction": 0.024680,
+  "flood_geotiff_url": "/results/{job_id}/flood.tif",
+  "flood_geojson_url": "/results/{job_id}/flood.geojson",
+  "note": "Statistics are computed from raster pixel arithmetic..."
+}
 ```
 
- Potential Applications
+**Error responses:**
+- `422` — Invalid or misaligned GeoTIFFs
+- `500` — Internal processing failure
 
-- Flood extent mapping
-- Preliminary infrastructure exposure assessment
-- Identification of areas requiring field verification
-- Disaster-response planning and prioritization
-- Geospatial analysis for researchers and response teams
+### `GET /results/{job_id}/flood.tif`
+Download the classified flood GeoTIFF.  Pixel encoding:
 
- Limitations
+| Value | Meaning |
+|---|---|
+| `0` | Valid, not flooded |
+| `1` | Flooded |
+| `255` | Invalid / nodata |
 
-Flood detection depends on suitable imagery, preprocessing, and detection thresholds. Radar changes can occur for reasons other than flooding. Infrastructure exposure estimates do not confirm actual damage and should be verified with reliable reference data or field observations.
+### `GET /results/{job_id}/flood.geojson`
+Download the flood polygons as a GeoJSON FeatureCollection (WGS 84 / EPSG:4326).
 
- Future Scope
+---
 
-- Automated Sentinel-1 data acquisition
-- Improved flood classification and validation
-- Time-series flood monitoring
-- More detailed infrastructure impact analysis
-- Enhanced map exports and reporting
+## Python API
 
-*Turning satellite observations into actionable flood intelligence.*
+```python
+from guardian.preprocessing.sentinel import ScaleHint, validate_geotiff, align_rasters, load_band
+from guardian.detection.flood import detect_flood
+from guardian.output.geotiff import write_flood_geotiff
+from guardian.output.geojson import write_flood_geojson
 
+# Validate inputs
+validate_geotiff("pre_flood.tif")
+align_rasters("pre_flood.tif", "post_flood.tif")  # raises AlignmentError if mismatched
+
+# Detect flooding
+result = detect_flood(
+    "pre_flood.tif",
+    "post_flood.tif",
+    threshold_db=-3.0,     # configurable
+    min_area_pixels=9,
+    scale=ScaleHint.DB,    # always explicit — never assumed
+)
+
+print(f"Flooded: {result.flooded_pixel_count} / {result.valid_pixel_count} px "
+      f"({result.flooded_fraction:.2%})")
+
+# Write outputs
+write_flood_geotiff(result, "flood_mask.tif")
+write_flood_geojson(result, "flood_polygons.geojson")
+```
+
+---
+
+## Assumptions & Limitations
+
+### Assumptions
+- Input imagery is in **dB scale** (default).  Pass `scale=ScaleHint.LINEAR` for linear power.
+- Both scenes are **co-registered** before use (same CRS, grid, and extent).
+- The −3 dB threshold is an empirical heuristic; it does not generalise to all land covers.
+- Nodata pixels are those declared in the GeoTIFF metadata (not implicitly 0 or NaN).
+
+### Limitations
+| Limitation | Impact |
+|---|---|
+| No terrain layover/shadow mask | False positives on steep slopes |
+| No urban area mask | Building double-bounce can resemble open water |
+| No speckle filter (only a post-classification size filter) | Residual isolated false positives |
+| No automatic co-registration | Misaligned inputs produce clear `AlignmentError` |
+| No temporal normelling | Seasonally varying dry-land backscatter shifts the effective threshold |
+| In-memory job store | Job results lost on server restart; not for production use |
+
+---
+
+## Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `GUARDIAN_RESULTS_DIR` | `./results` | Directory for generated job outputs |
+
+---
+
+## Contributing
+
+1. Fork and branch from `main`.
+2. Add tests for any new detection logic.
+3. Run `pytest -v` before opening a PR.
+4. Never commit real satellite imagery or actual flood observations.

@@ -1,0 +1,35 @@
+# ── Guardian of the Terai ── Python dependencies ──────────────────────────
+#
+# Install with:
+#   pip install -r requirements.txt
+#
+# Rasterio and GDAL are best installed via conda on Windows:
+#   conda install -c conda-forge rasterio
+
+# ── Backend ───────────────────────────────────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9       # multipart/form-data for file uploads
+
+# ── Raster I/O and geospatial processing ─────────────────────────────────
+rasterio>=1.3.10
+numpy>=1.26.0
+scipy>=1.13.0                 # connected-component labelling (min-area filter)
+
+# ── Vector output ─────────────────────────────────────────────────────────
+# rasterio.features.shapes is used for vectorisation;
+# shapely and fiona are included for future extensibility.
+shapely>=2.0.5
+fiona>=1.9.6
+
+# ── Dashboard ─────────────────────────────────────────────────────────────
+streamlit>=1.35.0
+folium>=0.16.0
+streamlit-folium>=0.20.0
+
+# ── HTTP client (dashboard → API calls, test client) ──────────────────────
+httpx>=0.27.0
+
+# ── Testing ───────────────────────────────────────────────────────────────
+pytest>=8.2.0
+pytest-asyncio>=0.23.0
