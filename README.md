@@ -5,7 +5,7 @@
 
 ---
 
-## ⚠️ Data Disclaimer
+##  Data Disclaimer
 
 All flood statistics produced by this system are derived from **raster pixel arithmetic on actual input files**.  
 No flood extents, pixel counts, or statistics are fabricated, interpolated, or estimated from external sources.  
